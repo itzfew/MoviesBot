@@ -4,36 +4,33 @@ import axios from 'axios';
 import { about } from './commands/about';
 import { greeting } from './text/greeting';
 import { production, development } from './core';
-import { movieSearch } from './commands/search'; // your movie search.ts
+import { movieSearch } from './commands/search';
 
 // ====== CONFIG ======
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
 const ADMIN_ID = 6930703214;
 const BOT_USERNAME = 'SearchNEETJEEBot';
-const GOOGLE_SHEETS_WEBAPP_URL = process.env.SHEETS_WEBAPP_URL || ''; // Your deployed Apps Script web app endpoint
+const GOOGLE_SHEETS_WEBAPP_URL = process.env.SHEETS_WEBAPP_URL || '';
 
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN not provided!');
-if (!GOOGLE_SHEETS_WEBAPP_URL) console.warn('⚠️ SHEETS_WEBAPP_URL not provided! Chat saving will fail.');
+if (!GOOGLE_SHEETS_WEBAPP_URL) console.warn('⚠️ SHEETS_WEBAPP_URL not provided! Saving will fail.');
 
 console.log(`Running bot in ${ENVIRONMENT} mode`);
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ===== Helper: Save Chat to Google Sheets =====
-async function saveChatToSheets(chat: any, user?: any) {
+// ===== Helper: Save Chat ID to Google Sheets =====
+async function saveChatToSheets(chatId: number) {
   if (!GOOGLE_SHEETS_WEBAPP_URL) return;
   try {
-    const payload = {
-      chat_id: chat.id,
-      chat_type: chat.type,
-      name: user?.first_name || chat.title || 'Unknown',
-      username: user?.username || chat.username || '',
-      date: new Date().toISOString(),
-    };
-    await axios.post(GOOGLE_SHEETS_WEBAPP_URL, payload);
+    await axios.post(GOOGLE_SHEETS_WEBAPP_URL, {
+      action: 'saveChatId',
+      chatId: String(chatId),
+      savedAt: new Date().toISOString()
+    });
   } catch (err) {
-    console.error('Failed to save chat to Sheets:', err);
+    console.error('❌ Failed to save chat ID to Sheets:', err.message || err);
   }
 }
 
@@ -57,12 +54,13 @@ bot.command('start', async (ctx) => {
   const user = ctx.from;
   if (!chat || !user) return;
 
-  await saveChatToSheets(chat, user);
+  await saveChatToSheets(chat.id);
 
   if (ctx.chat?.type === 'private') {
     await greeting()(ctx);
   }
 
+  // Notify admin
   if (chat.id !== ADMIN_ID) {
     const name = user.first_name || chat.title || 'Unknown';
     const username = user.username ? `@${user.username}` : chat.username ? `@${chat.username}` : 'N/A';
@@ -76,15 +74,15 @@ bot.command('start', async (ctx) => {
   }
 });
 
-// Admin: /users (from Sheets)
+// Admin: /users (count from Sheets)
 bot.command('users', async (ctx) => {
   if (ctx.from?.id !== ADMIN_ID) return ctx.reply('You are not authorized.');
   try {
     const res = await axios.get(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getUserCount`);
     const count = res.data.count || 0;
-    await ctx.reply(`📊 Total interacting entities: ${count}`);
+    await ctx.reply(`📊 Total unique chat IDs: ${count}`);
   } catch (err) {
-    console.error('Error fetching user count:', err);
+    console.error('Error fetching user count:', err.message || err);
     await ctx.reply('❌ Unable to fetch user count.');
   }
 });
@@ -97,7 +95,7 @@ bot.on('message', async (ctx) => {
 
   if (!chat?.id || !user) return;
 
-  await saveChatToSheets(chat, user);
+  await saveChatToSheets(chat.id);
 
   const isPrivate = chat.type === 'private';
   const isGroup = chat.type === 'group' || chat.type === 'supergroup';
@@ -115,6 +113,7 @@ bot.on('message', async (ctx) => {
     await movieSearch()(ctx);
   }
 
+  // Admin notification
   if (chat.id !== ADMIN_ID) {
     const name = user.first_name || chat.title || 'Unknown';
     const username = user.username ? `@${user.username}` : chat.username ? `@${chat.username}` : 'N/A';
@@ -131,13 +130,12 @@ bot.on('message', async (ctx) => {
 // ===== New Group Members =====
 bot.on('new_chat_members', async (ctx) => {
   for (const member of ctx.message.new_chat_members) {
-    const name = member.first_name || 'there';
     if (member.username === ctx.botInfo?.username) {
       await ctx.reply(`*Thanks for adding me!*\n\nType *@${BOT_USERNAME} movie name* to search movies.`, {
         parse_mode: 'Markdown',
       });
     } else {
-      await ctx.reply(`*Hi ${name}!* Welcome! \n\nType *@${BOT_USERNAME} movie name* to search movies.`, {
+      await ctx.reply(`*Hi ${member.first_name || 'there'}!* Welcome! \n\nType *@${BOT_USERNAME} movie name* to search movies.`, {
         parse_mode: 'Markdown',
       });
     }
