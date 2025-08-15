@@ -1,16 +1,22 @@
 import { Context } from 'telegraf';
 import { fetch } from 'undici';
 
-// Interface for movie items
+// Interface for movie items, including poster_path
 interface MovieItem {
   category: string;
   title: string;
   key: string;
   telegramLink: string;
+  poster_path: string;
+  wiki_link: string;
 }
 
 function createTelegramLink(key: string): string {
   return `https://t.me/MovieSearchBot?start=${key}`;
+}
+
+function createMediaBotLink(key: string): string {
+  return `https://t.me/MovieMediaBot?start=${key}`;
 }
 
 let movieData: MovieItem[] = [];
@@ -51,7 +57,7 @@ async function initializeMovieData(): Promise<void> {
         lastComma = line.lastIndexOf(',');
         if (lastComma === -1) continue;
         const imdb_id = line.slice(lastComma + 1).trim();
-        const title = line.slice(0, lastComma).trim(); // Title may have commas, but this captures it fully
+        const title = line.slice(0, lastComma).trim(); // Title may have commas
 
         if (!title || !imdb_id || !poster_path || !wiki_link) continue;
 
@@ -63,6 +69,8 @@ async function initializeMovieData(): Promise<void> {
           title,
           key,
           telegramLink: tgLink,
+          poster_path,
+          wiki_link,
         });
       }
     } catch (e: unknown) {
@@ -91,87 +99,110 @@ function rankedMatches(query: string): MovieItem[] {
   return results.sort((a, b) => b.rank - a.rank).map((r) => r.item);
 }
 
-const defaultInstructions = [
-  {
-    tag: 'p',
-    children: [
-      '🎬 How to watch: ',
-      {
-        tag: 'a',
-        attrs: { href: 'https://youtu.be/your-movie-guide-link' },
-        children: ['Watch Guide'],
-      },
-    ],
-  },
-  {
-    tag: 'p',
-    children: ['📢 Join our movie channels:'],
-  },
-  {
-    tag: 'ul',
-    children: [
-      {
-        tag: 'li',
-        children: [{ tag: 'a', attrs: { href: 'https://t.me/MovieSearchBot' }, children: ['@MovieSearchBot'] }, ' - Search for movies'],
-      },
-    ],
-  },
-];
+// Pagination constants
+const ITEMS_PER_PAGE = 5;
 
-let accessToken: string | null = null;
-interface TelegraphResponse {
-  ok: boolean;
-  result?: { access_token?: string; path?: string };
-  error?: string;
+// Group and channel IDs (replace with actual IDs)
+const GROUP_ID = '@YourMovieGroup'; // Replace with actual group ID or username
+const CHANNEL_ID = '@YourMovieChannel'; // Replace with actual channel ID or username
+
+async function checkUserMembership(ctx: Context, userId: number, chatId: string): Promise<boolean> {
+  try {
+    const member = await ctx.telegram.getChatMember(chatId, userId);
+    return ['member', 'administrator', 'creator'].includes(member.status);
+  } catch (e: unknown) {
+    console.error(`Failed to check membership for ${chatId}:`, (e as Error).message || e);
+    return false;
+  }
 }
 
-async function createTelegraphAccount() {
-  const res = await fetch('https://api.telegra.ph/createAccount', {
-    method: 'POST',
-    body: new URLSearchParams({ short_name: 'moviebot', author_name: 'Movie Bot' }),
+async function sendMovieList(ctx: Context, query: string, matches: MovieItem[], page: number = 0) {
+  const start = page * ITEMS_PER_PAGE;
+  const end = start + ITEMS_PER_PAGE;
+  const pageMatches = matches.slice(start, end);
+
+  if (pageMatches.length === 0) {
+    await ctx.reply(`❌ No movies found for "${query}".`, {
+      reply_parameters: { message_id: (ctx.message as { message_id: number }).message_id },
+    });
+    return;
+  }
+
+  const mention =
+    ctx.chat?.type?.includes('group') && ctx.from?.username
+      ? `@${ctx.from.username}`
+      : ctx.from?.first_name || '';
+
+  const totalPages = Math.ceil(matches.length / ITEMS_PER_PAGE);
+  const text = `🔍 ${mention}, found *${matches.length}* matches for *${query}* (Page ${page + 1}/${totalPages}):\n\n` +
+    pageMatches
+      .map((item, index) => `${start + index + 1}. [${item.title}](${item.telegramLink}) (${item.category})`)
+      .join('\n');
+
+  const inlineKeyboard = [
+    pageMatches.map((item, index) => ({
+      text: `${start + index + 1}. ${item.title}`,
+      url: item.telegramLink,
+    })),
+    [
+      ...(page > 0 ? [{ text: '⬅️ Previous', callback_data: `prev_${query}_${page - 1}` }] : []),
+      ...(page < totalPages - 1 ? [{ text: 'Next ➡️', callback_data: `next_${query}_${page + 1}` }] : []),
+    ],
+    [
+      { text: 'Join Group', url: `https://t.me/${GROUP_ID.replace('@', '')}` },
+      { text: 'Share Bot', switch_inline_query: '' },
+    ],
+  ].filter(row => row.length > 0);
+
+  await ctx.reply(text, {
+    parse_mode: 'Markdown',
+    reply_parameters: { message_id: (ctx.message as { message_id: number }).message_id },
+    reply_markup: { inline_keyboard: inlineKeyboard },
   });
-  const data = (await res.json()) as TelegraphResponse;
-  if (data.ok && data.result?.access_token) accessToken = data.result.access_token;
-  else throw new Error(data.error || 'Failed to create Telegraph account');
 }
 
-async function createTelegraphPageForMatches(query: string, matches: MovieItem[]): Promise<string> {
-  if (!accessToken) await createTelegraphAccount();
+async function sendMovieDetails(ctx: Context, movie: MovieItem) {
+  const userId = ctx.from?.id;
+  if (!userId) {
+    await ctx.reply('❌ Unable to verify user.', {
+      reply_parameters: { message_id: (ctx.message as { message_id: number })?.message_id },
+    });
+    return;
+  }
 
-  const content = [
-    { tag: 'h3', children: [`Search results for: "${query}"`] },
-    { tag: 'p', children: [`Found ${matches.length} movies:`] },
-    {
-      tag: 'ul',
-      children: matches.map((item) => ({
-        tag: 'li',
-        children: [
-          '• ',
-          { tag: 'a', attrs: { href: item.telegramLink, target: '_blank' }, children: [item.title] },
-          ` (${item.category})`,
-        ],
-      })),
-    },
-    { tag: 'hr' },
-    { tag: 'h4', children: ['ℹ️ Instructions & Links'] },
-    ...defaultInstructions,
-    { tag: 'p', attrs: { style: 'color: gray; font-size: 0.8em' }, children: ['Generated by Movie Bot'] },
+  const isGroupMember = await checkUserMembership(ctx, userId, GROUP_ID);
+  const isChannelMember = await checkUserMembership(ctx, userId, CHANNEL_ID);
+
+  if (!isGroupMember || !isChannelMember) {
+    const inlineKeyboard = [
+      ...(isGroupMember ? [] : [{ text: 'Join Group', url: `https://t.me/${GROUP_ID.replace('@', '')}` }]),
+      ...(isChannelMember ? [] : [{ text: 'Join Channel', url: `https://t.me/${CHANNEL_ID.replace('@', '')}` }]),
+      { text: 'Verify', callback_data: `verify_${movie.key}` },
+    ].filter(row => row.length > 0);
+
+    await ctx.reply(
+      `🎬 *${movie.title}* (${movie.category})\n\nPlease join our group and channel to access the movie:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [inlineKeyboard] },
+      },
+    );
+    return;
+  }
+
+  const inlineKeyboard = [
+    [{ text: 'Watch Movie', url: createMediaBotLink(movie.key) }],
+    [{ text: 'Wikipedia', url: movie.wiki_link }],
   ];
 
-  const res = await fetch('https://api.telegra.ph/createPage', {
-    method: 'POST',
-    body: new URLSearchParams({
-      access_token: accessToken!,
-      title: `Movies: ${query.slice(0, 50)}`,
-      author_name: 'Movie Bot',
-      content: JSON.stringify(content),
-      return_content: 'true',
-    }),
-  });
-
-  const data = (await res.json()) as TelegraphResponse;
-  if (data.ok && data.result?.path) return `https://telegra.ph/${data.result.path}`;
-  throw new Error(data.error || 'Failed to create Telegraph page');
+  await ctx.replyWithPhoto(
+    movie.poster_path,
+    {
+      caption: `🎬 *${movie.title}* (${movie.category})\n\nAccess the movie via @MovieMediaBot.`,
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: inlineKeyboard },
+    },
+  );
 }
 
 // -------------------- Bot Handler --------------------
@@ -189,35 +220,65 @@ export function movieSearch() {
         return;
       }
 
-      const mention =
-        ctx.chat?.type?.includes('group') && ctx.from?.username
-          ? `@${ctx.from.username}`
-          : ctx.from?.first_name || '';
+      // Handle /start with movie ID
+      if (query.startsWith('/start ') && query.split(' ').length > 1) {
+        const movieId = query.split(' ')[1];
+        const movie = movieData.find((item) => item.key === movieId);
+        if (!movie) {
+          await ctx.reply('❌ Movie not found.', {
+            reply_parameters: { message_id: message.message_id },
+          });
+          return;
+        }
+        await sendMovieDetails(ctx, movie);
+        return;
+      }
 
       const matches = rankedMatches(query);
       if (matches.length === 0) {
-        await ctx.reply(`❌ ${mention}, no movies found for "${query}".`, {
+        await ctx.reply(`❌ No movies found for "${query}".`, {
           reply_parameters: { message_id: message.message_id },
         });
         return;
       }
 
-      const telegraphURL = await createTelegraphPageForMatches(query, matches);
-      const shortQuery = query.split(/\s+/).slice(0, 3).join(' ');
-
-      await ctx.reply(
-        `🔍 ${mention}, found *${matches.length}* matches for *${shortQuery}*:\n[View movies](${telegraphURL})`,
-        {
-          parse_mode: 'Markdown',
-          link_preview_options: { is_disabled: true },
-          reply_parameters: { message_id: message.message_id },
-        },
-      );
+      await sendMovieList(ctx, query, matches, 0);
     } catch (err: unknown) {
       console.error(err);
       await ctx.reply('❌ Something went wrong. Please try again later.', {
         reply_parameters: { message_id: (ctx.message as { message_id: number })?.message_id },
       });
+    }
+  };
+}
+
+// -------------------- Callback Query Handler --------------------
+export function handleCallback() {
+  return async (ctx: Context) => {
+    try {
+      const callbackData = ctx.callbackQuery?.data;
+      if (!callbackData) return;
+
+      if (callbackData.startsWith('prev_') || callbackData.startsWith('next_')) {
+        const [action, query, pageStr] = callbackData.split('_');
+        const page = parseInt(pageStr, 10);
+        const matches = rankedMatches(query);
+        await sendMovieList(ctx, query, matches, page);
+        await ctx.answerCbQuery();
+      } else if (callbackData.startsWith('verify_')) {
+        const movieId = callbackData.split('_')[1];
+        const movie = movieData.find((item) => item.key === movieId);
+        if (!movie) {
+          await ctx.reply('❌ Movie not found.');
+          return;
+        }
+        await sendMovieDetails(ctx, movie);
+        await ctx.answerCbQuery();
+      }
+    } catch (err: unknown) {
+      console.error(err);
+      await ctx.reply('❌ Something went wrong. Please try again later.');
+      await ctx.answerCbQuery();
     }
   };
 }
