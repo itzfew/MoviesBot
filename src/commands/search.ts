@@ -16,9 +16,9 @@ function createTelegramLink(key: string): string {
 let movieData: MovieItem[] = [];
 function initializeMovieData(): void {
   const sources = [
-    { category: '1950-1989', path: 'data/bollywood5089.csv' },
-    { category: '1990-2009', path: 'data/bollywood9009.csv' },
-    { category: '2010-2019', path: 'data/bollywood1019.csv' },
+    { category: '1950-1989', path: '../../data/bollywood5089.csv' },
+    { category: '1990-2009', path: '../../data/bollywood9009.csv' },
+    { category: '2010-2019', path: '../../data/bollywood1019.csv' },
   ];
 
   const output: MovieItem[] = [];
