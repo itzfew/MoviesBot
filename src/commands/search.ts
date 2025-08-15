@@ -1,5 +1,5 @@
 import { Context } from 'telegraf';
-import { fetch } from 'undici';
+import { readFileSync } from 'fs';
 
 // Interface for movie items remains the same
 interface MovieItem {
@@ -14,23 +14,18 @@ function createTelegramLink(key: string): string {
 }
 
 let movieData: MovieItem[] = [];
-async function initializeMovieData(): Promise<void> {
+function initializeMovieData(): void {
   const sources = [
-    { category: '1950-1989', url: 'https://raw.githubusercontent.com/itzfew/Movies-Bot/master/1950-1989/bollywood.csv' },
-    { category: '1990-2009', url: 'https://raw.githubusercontent.com/itzfew/Movies-Bot/master/1990-2009/bollywood.csv' },
-    { category: '2010-2019', url: 'https://raw.githubusercontent.com/itzfew/Movies-Bot/master/2010-2019/bollywood.csv' },
+    { category: '1950-1989', path: 'data/bollywood5089.csv' },
+    { category: '1990-2009', path: 'data/bollywood9009.csv' },
+    { category: '2010-2019', path: 'data/bollywood1019.csv' },
   ];
 
   const output: MovieItem[] = [];
 
   for (const source of sources) {
     try {
-      const res = await fetch(source.url);
-      if (!res.ok) {
-        console.error(`Failed to fetch ${source.url}: ${res.statusText}`);
-        continue;
-      }
-      const text = await res.text();
+      const text = readFileSync(source.path, 'utf-8');
       const lines = text.split('\n').filter((line) => line.trim());
 
       for (let line of lines) {
@@ -66,13 +61,13 @@ async function initializeMovieData(): Promise<void> {
         });
       }
     } catch (e: unknown) {
-      console.error(`Failed to load ${source.category}:`, (e as Error).message || e);
+      console.error(`Failed to load ${source.category} from ${source.path}:`, (e as Error).message || e);
     }
   }
 
   movieData = output;
 }
-initializeMovieData().catch(console.error);
+initializeMovieData();
 
 function rankedMatches(query: string): MovieItem[] {
   const queryWords = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
