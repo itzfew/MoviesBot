@@ -5,6 +5,7 @@ import { about } from './commands/about';
 import { greeting } from './text/greeting';
 import { production, development } from './core';
 import { movieSearch } from './commands/search';
+import { Message, Chat, User } from 'telegraf/typings/core/types/typegram';
 
 // ====== CONFIG ======
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -27,15 +28,15 @@ async function saveChatToSheets(chatId: number) {
     await axios.post(GOOGLE_SHEETS_WEBAPP_URL, {
       action: 'saveChatId',
       chatId: String(chatId),
-      savedAt: new Date().toISOString()
+      savedAt: new Date().toISOString(),
     });
-  } catch (err) {
-    console.error('❌ Failed to save chat ID to Sheets:', err.message || err);
+  } catch (err: unknown) {
+    console.error('❌ Failed to save chat ID to Sheets:', (err as Error).message || err);
   }
 }
 
 // ===== Commands =====
-bot.command('add', async (ctx) => {
+bot.command('add', async (ctx: Context) => {
   if (ctx.chat?.type !== 'private') return;
   await ctx.reply('Please share through this bot: @NeetAspirantsBot', {
     reply_markup: {
@@ -44,92 +45,97 @@ bot.command('add', async (ctx) => {
   });
 });
 
-bot.command('about', async (ctx) => {
+bot.command('about', async (ctx: Context) => {
   if (ctx.chat?.type !== 'private') return;
   await about()(ctx);
 });
 
-bot.command('start', async (ctx) => {
-  const chat = ctx.chat;
-  const user = ctx.from;
+bot.command('start', async (ctx: Context) => {
+  const chat = ctx.chat as Chat | undefined;
+  const user = ctx.from as User | undefined;
   if (!chat || !user) return;
 
   await saveChatToSheets(chat.id);
 
-  if (ctx.chat?.type === 'private') {
+  if (chat.type === 'private') {
     await greeting()(ctx);
   }
 
   // Notify admin
   if (chat.id !== ADMIN_ID) {
-    const name = user.first_name || chat.title || 'Unknown';
-    const username = user.username ? `@${user.username}` : chat.username ? `@${chat.username}` : 'N/A';
+    const name = user.first_name || (chat as Chat.GroupChat).title || 'Unknown';
+    const username =
+      user.username ? `@${user.username}` : (chat as Chat.GroupChat).username ? `@${(chat as Chat.GroupChat).username}` : 'N/A';
     const chatTypeLabel = chat.type.charAt(0).toUpperCase() + chat.type.slice(1);
 
     await ctx.telegram.sendMessage(
       ADMIN_ID,
       `*New ${chatTypeLabel} started the bot!*\n\n*Name:* ${name}\n*Username:* ${username}\n*Chat ID:* ${chat.id}\n*Type:* ${chat.type}`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown' },
     );
   }
 });
 
 // Admin: /users (count from Sheets)
-bot.command('users', async (ctx) => {
+bot.command('users', async (ctx: Context) => {
   if (ctx.from?.id !== ADMIN_ID) return ctx.reply('You are not authorized.');
   try {
     const res = await axios.get(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getUserCount`);
     const count = res.data.count || 0;
     await ctx.reply(`📊 Total unique chat IDs: ${count}`);
-  } catch (err) {
-    console.error('Error fetching user count:', err.message || err);
+  } catch (err: unknown) {
+    console.error('Error fetching user count:', (err as Error).message || err);
     await ctx.reply('❌ Unable to fetch user count.');
   }
 });
 
 // ===== Message Handler =====
-bot.on('message', async (ctx) => {
-  const chat = ctx.chat;
-  const user = ctx.from;
-  const message = ctx.message;
+bot.on('message', async (ctx: Context) => {
+  const chat = ctx.chat as Chat | undefined;
+  const user = ctx.from as User | undefined;
+  const message = ctx.message as Message | undefined;
 
-  if (!chat?.id || !user) return;
+  if (!chat?.id || !user || !message) return;
 
   await saveChatToSheets(chat.id);
 
   const isPrivate = chat.type === 'private';
   const isGroup = chat.type === 'group' || chat.type === 'supergroup';
-  const mentionedEntity = message.entities?.find(
+  const mentionedEntity = (message as Message.TextMessage).entities?.find(
     (e) =>
       e.type === 'mention' &&
-      message.text?.slice(e.offset, e.offset + e.length).toLowerCase() ===
-        `@${BOT_USERNAME.toLowerCase()}`
+      (message as Message.TextMessage).text?.slice(e.offset, e.offset + e.length).toLowerCase() ===
+        `@${BOT_USERNAME.toLowerCase()}`,
   );
 
-  if (message.text && (isPrivate || (isGroup && mentionedEntity))) {
-    if (mentionedEntity) {
-      ctx.message.text = message.text.replace(`@${BOT_USERNAME}`, '').trim();
+  if ((message as Message.TextMessage).text && (isPrivate || (isGroup && mentionedEntity))) {
+    if (mentionedEntity && (message as Message.TextMessage).text) {
+      (ctx.message as Message.TextMessage).text = (message as Message.TextMessage).text.replace(`@${BOT_USERNAME}`, '').trim();
     }
     await movieSearch()(ctx);
   }
 
   // Admin notification
   if (chat.id !== ADMIN_ID) {
-    const name = user.first_name || chat.title || 'Unknown';
-    const username = user.username ? `@${user.username}` : chat.username ? `@${chat.username}` : 'N/A';
+    const name = user.first_name || (chat as Chat.GroupChat).title || 'Unknown';
+    const username =
+      user.username ? `@${user.username}` : (chat as Chat.GroupChat).username ? `@${(chat as Chat.GroupChat).username}` : 'N/A';
     const chatTypeLabel = chat.type.charAt(0).toUpperCase() + chat.type.slice(1);
 
     await ctx.telegram.sendMessage(
       ADMIN_ID,
       `*New ${chatTypeLabel} interacted!*\n\n*Name:* ${name}\n*Username:* ${username}\n*Chat ID:* ${chat.id}\n*Type:* ${chat.type}`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown' },
     );
   }
 });
 
 // ===== New Group Members =====
-bot.on('new_chat_members', async (ctx) => {
-  for (const member of ctx.message.new_chat_members) {
+bot.on('new_chat_members', async (ctx: Context) => {
+  const message = ctx.message as Message.NewChatMembersMessage | undefined;
+  if (!message) return;
+
+  for (const member of message.new_chat_members) {
     if (member.username === ctx.botInfo?.username) {
       await ctx.reply(`*Thanks for adding me!*\n\nType *@${BOT_USERNAME} movie name* to search movies.`, {
         parse_mode: 'Markdown',
