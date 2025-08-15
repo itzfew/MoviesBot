@@ -12,11 +12,11 @@ interface MovieItem {
 }
 
 function createTelegramLink(key: string): string {
-  return `https://t.me/MovieSearchBot?start=${key}`;
+  return `https://t.me/Search_indianMoviesbot?start=${key}`;
 }
 
 function createMediaBotLink(key: string): string {
-  return `https://t.me/MovieMediaBot?start=${key}`;
+  return `https://t.me/SearchMoviesbot_bot?start=${key}`;
 }
 
 let movieData: MovieItem[] = [];
@@ -102,18 +102,31 @@ function rankedMatches(query: string): MovieItem[] {
 // Pagination constants
 const ITEMS_PER_PAGE = 5;
 
-// Group and channel IDs (replace with actual IDs)
-const GROUP_ID = '@YourMovieGroup'; // Replace with actual group ID or username
-const CHANNEL_ID = '@YourMovieChannel'; // Replace with actual channel ID or username
+// Group IDs and join URLs (replace chat_ids with actual numeric IDs, e.g., -1001234567890)
+const GROUPS = [
+  { id: '-1001234567890', url: 'https://t.me/+2csYKkDagRBhMWRl', name: 'Group 1' }, // Replace id with actual chat_id
+  { id: '-1009876543210', url: 'https://t.me/+FUdbdVUKII02M2Jl', name: 'Group 2' }, // Replace id with actual chat_id
+];
 
-async function checkUserMembership(ctx: Context, userId: number, chatId: string): Promise<boolean> {
+async function checkUserMembership(ctx: Context, userId: number, group: { id: string }): Promise<boolean> {
   try {
-    const member = await ctx.telegram.getChatMember(chatId, userId);
+    const member = await ctx.telegram.getChatMember(group.id, userId);
     return ['member', 'administrator', 'creator'].includes(member.status);
   } catch (e: unknown) {
-    console.error(`Failed to check membership for ${chatId}:`, (e as Error).message || e);
+    console.error(`Failed to check membership for ${group.id}:`, (e as Error).message || e);
     return false;
   }
+}
+
+async function isJoinedAllGroups(ctx: Context, userId: number): Promise<{ joined: boolean; missing: typeof GROUPS } > {
+  const missing = [];
+  for (const group of GROUPS) {
+    const isMember = await checkUserMembership(ctx, userId, group);
+    if (!isMember) {
+      missing.push(group);
+    }
+  }
+  return { joined: missing.length === 0, missing };
 }
 
 async function sendMovieList(ctx: Context, query: string, matches: MovieItem[], page: number = 0) {
@@ -140,16 +153,13 @@ async function sendMovieList(ctx: Context, query: string, matches: MovieItem[], 
       .join('\n');
 
   const inlineKeyboard = [
-    pageMatches.map((item, index) => ({
-      text: `${start + index + 1}. ${item.title}`,
-      url: item.telegramLink,
-    })),
+    ...pageMatches.map((item, index) => ([{ text: `${start + index + 1}. ${item.title}`, url: item.telegramLink }])),
     [
       ...(page > 0 ? [{ text: '⬅️ Previous', callback_data: `prev_${query}_${page - 1}` }] : []),
       ...(page < totalPages - 1 ? [{ text: 'Next ➡️', callback_data: `next_${query}_${page + 1}` }] : []),
     ],
     [
-      { text: 'Join Group', url: `https://t.me/${GROUP_ID.replace('@', '')}` },
+      { text: 'Join Group', url: GROUPS[0].url },
       { text: 'Share Bot', switch_inline_query: '' },
     ],
   ].filter(row => row.length > 0);
@@ -170,18 +180,16 @@ async function sendMovieDetails(ctx: Context, movie: MovieItem) {
     return;
   }
 
-  const isGroupMember = await checkUserMembership(ctx, userId, GROUP_ID);
-  const isChannelMember = await checkUserMembership(ctx, userId, CHANNEL_ID);
+  const membership = await isJoinedAllGroups(ctx, userId);
 
-  if (!isGroupMember || !isChannelMember) {
+  if (!membership.joined) {
     const inlineKeyboard = [
-      ...(isGroupMember ? [] : [{ text: 'Join Group', url: `https://t.me/${GROUP_ID.replace('@', '')}` }]),
-      ...(isChannelMember ? [] : [{ text: 'Join Channel', url: `https://t.me/${CHANNEL_ID.replace('@', '')}` }]),
+      ...membership.missing.map(group => ({ text: `Join ${group.name}`, url: group.url })),
       { text: 'Verify', callback_data: `verify_${movie.key}` },
-    ].filter(row => row.length > 0);
+    ];
 
     await ctx.reply(
-      `🎬 *${movie.title}* (${movie.category})\n\nPlease join our group and channel to access the movie:`,
+      `🎬 *${movie.title}* (${movie.category})\n\nPlease join all our groups to access the movie:`,
       {
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: [inlineKeyboard] },
@@ -198,7 +206,7 @@ async function sendMovieDetails(ctx: Context, movie: MovieItem) {
   await ctx.replyWithPhoto(
     movie.poster_path,
     {
-      caption: `🎬 *${movie.title}* (${movie.category})\n\nAccess the movie via @MovieMediaBot.`,
+      caption: `🎬 *${movie.title}* (${movie.category})\n\nWiki: ${movie.wiki_link}\n\nAccess the movie via @SearchMoviesbot_bot.`,
       parse_mode: 'Markdown',
       reply_markup: { inline_keyboard: inlineKeyboard },
     },
