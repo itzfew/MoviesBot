@@ -87,8 +87,8 @@ const ITEMS_PER_PAGE = 10;
 
 // Group IDs and join URLs (replace with actual numeric IDs for checkUserMembership)
 const GROUPS = [
-  { id: '-1001234567890', url: 'https://t.me/+2csYKkDagRBhMWRl', name: 'Group 1' },
-  { id: '-1009876543210', url: 'https://t.me/+FUdbdVUKII02M2Jl', name: 'Group 2' },
+  { id: '-1002804994431', url: 'https://t.me/+2csYKkDagRBhMWRl', name: 'Group 1' },
+  { id: '-1002678723407', url: 'https://t.me/+FUdbdVUKII02M2Jl', name: 'Group 2' },
 ];
 
 async function checkUserMembership(ctx: Context, userId: number, group: { id: string }): Promise<boolean> {
