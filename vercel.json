@@ -6,6 +6,7 @@
       "use": "@vercel/node"
     }
   ],
+    "include": ["data/**"]
   "routes": [
     {
       "src": "/(.*)",
