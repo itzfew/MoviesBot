@@ -4,14 +4,14 @@ import axios from 'axios';
 import { about } from './commands/about';
 import { greeting } from './text/greeting';
 import { production, development } from './core';
-import { movieSearch } from './commands/search';
+import { movieSearch, handleCallback } from './commands/search';
 import { Message, Chat, User } from 'telegraf/typings/core/types/typegram';
 
 // ====== CONFIG ======
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
 const ADMIN_ID = 6930703214;
-const BOT_USERNAME = 'SearchNEETJEEBot';
+const BOT_USERNAME = 'Search_indianMoviesbot';
 const GOOGLE_SHEETS_WEBAPP_URL = process.env.SHEETS_WEBAPP_URL || '';
 
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN not provided!');
@@ -147,6 +147,9 @@ bot.on('new_chat_members', async (ctx: Context) => {
     }
   }
 });
+
+// ===== Callback Query Handler =====
+bot.on('callback_query', handleCallback());
 
 // ===== Vercel Export =====
 export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
