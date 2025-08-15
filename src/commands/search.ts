@@ -1,51 +1,42 @@
 import { Context } from 'telegraf';
-import material from '../../data/material.json';
+import movies from '../../data/movies.json';
 import { fetch } from 'undici';
 
-interface MaterialItem {
+interface MovieItem {
+  category: string;
   title: string;
-  label: string;
   key: string;
   telegramLink: string;
 }
 
 function createTelegramLink(key: string): string {
-  return `https://t.me/Material_eduhubkmrbot?start=${key}`;
+  return `https://t.me/MovieSearchBot?start=${key}`;
 }
 
-function similarity(a: string, b: string): number {
-  a = a.toLowerCase();
-  b = b.toLowerCase();
-  const setA = new Set(a.split(/\s+/));
-  const setB = new Set(b.split(/\s+/));
-  const common = [...setA].filter(word => setB.has(word)).length;
-  return common / Math.max(setA.size, setB.size);
-}
-
-let materialData: MaterialItem[] = [];
-async function initializeMaterialData(): Promise<void> {
-  const output: MaterialItem[] = [];
-  for (const cat of material) {
+let movieData: MovieItem[] = [];
+async function initializeMovieData(): Promise<void> {
+  const output: MovieItem[] = [];
+  for (const cat of movies) {
     for (const item of cat.items) {
       const tgLink = createTelegramLink(item.key);
       output.push({
-        title: cat.title,
-        label: item.label,
+        category: cat.category,
+        title: item.title,
         key: item.key,
         telegramLink: tgLink,
       });
     }
   }
-  materialData = output;
+  movieData = output;
 }
-initializeMaterialData().catch(console.error);
+initializeMovieData().catch(console.error);
 
-function rankedMatches(query: string): MaterialItem[] {
+function rankedMatches(query: string): MovieItem[] {
   const queryWords = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const results: { item: MaterialItem; rank: number }[] = [];
+  const results: { item: MovieItem; rank: number }[] = [];
 
-  for (const item of materialData) {
-    const fullText = `${item.title} ${item.label}`.toLowerCase();
+  for (const item of movieData) {
+    const fullText = `${item.category} ${item.title}`.toLowerCase();
     const fullWords = new Set(fullText.split(/\s+/));
     const matchedWords = queryWords.filter(word => fullWords.has(word));
     const rank = Math.round((matchedWords.length / queryWords.length) * 100);
@@ -57,39 +48,26 @@ function rankedMatches(query: string): MaterialItem[] {
   return results.sort((a, b) => b.rank - a.rank).map(r => r.item);
 }
 
-// Telegraph instructions
 const defaultInstructions = [
   {
     tag: 'p',
-    children: ['📺 How to open link: ',
+    children: ['🎬 How to watch: ',
       {
         tag: 'a',
-        attrs: { href: 'https://youtu.be/S912R5lMShI?si=l5RsBbkbXaxFowbZ' },
-        children: ['YouTube Guide'],
+        attrs: { href: 'https://youtu.be/your-movie-guide-link' },
+        children: ['Watch Guide'],
       }],
   },
   {
     tag: 'p',
-    children: ['📚 Join more recommended bots:']
+    children: ['📢 Join our movie channels:']
   },
   {
     tag: 'ul',
     children: [
       {
         tag: 'li',
-        children: [{ tag: 'a', attrs: { href: 'https://t.me/Material_eduhubkmrbot' }, children: ['@Material_eduhubkmrbot'] }, ' - Study materials']
-      },
-      {
-        tag: 'li',
-        children: [{ tag: 'a', attrs: { href: 'https://t.me/EduhubKMR_bot' }, children: ['@EduhubKMR_bot'] }, ' - QuizBot']
-      },
-      {
-        tag: 'li',
-        children: [{ tag: 'a', attrs: { href: 'https://t.me/NEETPW01' }, children: ['@NEETPW01'] }, ' - Group For Discussion']
-      },
-      {
-        tag: 'li',
-        children: [{ tag: 'a', attrs: { href: 'https://t.me/NEETUG_26' }, children: ['@NEETUG_26'] }, ' - NEET JEE Channel']
+        children: [{ tag: 'a', attrs: { href: 'https://t.me/MovieSearchBot' }, children: ['@MovieSearchBot'] }, ' - Search for movies']
       }
     ],
   },
@@ -99,42 +77,42 @@ let accessToken: string | null = null;
 async function createTelegraphAccount() {
   const res = await fetch('https://api.telegra.ph/createAccount', {
     method: 'POST',
-    body: new URLSearchParams({ short_name: 'studybot', author_name: 'Study Bot' }),
+    body: new URLSearchParams({ short_name: 'moviebot', author_name: 'Movie Bot' }),
   });
   const data = await res.json();
   if (data.ok) accessToken = data.result.access_token;
   else throw new Error(data.error);
 }
 
-async function createTelegraphPageForMatches(query: string, matches: MaterialItem[]): Promise<string> {
+async function createTelegraphPageForMatches(query: string, matches: MovieItem[]): Promise<string> {
   if (!accessToken) await createTelegraphAccount();
 
   const content = [
-    { tag: 'h3', children: [`Results for: "${query}"`] },
-    { tag: 'p', children: [`Found ${matches.length} study materials:`] },
+    { tag: 'h3', children: [`Search results for: "${query}"`] },
+    { tag: 'p', children: [`Found ${matches.length} movies:`] },
     {
       tag: 'ul',
       children: matches.map((item) => ({
         tag: 'li',
         children: [
           '• ',
-          { tag: 'a', attrs: { href: item.telegramLink, target: '_blank' }, children: [item.label] },
-          ` (${item.title})`,
+          { tag: 'a', attrs: { href: item.telegramLink, target: '_blank' }, children: [item.title] },
+          ` (${item.category})`,
         ]
       }))
     },
     { tag: 'hr' },
-    { tag: 'h4', children: ['ℹ️ Resources & Instructions'] },
+    { tag: 'h4', children: ['ℹ️ Instructions & Links'] },
     ...defaultInstructions,
-    { tag: 'p', attrs: { style: 'color: gray; font-size: 0.8em' }, children: ['Generated by Study Bot'] }
+    { tag: 'p', attrs: { style: 'color: gray; font-size: 0.8em' }, children: ['Generated by Movie Bot'] }
   ];
 
   const res = await fetch('https://api.telegra.ph/createPage', {
     method: 'POST',
     body: new URLSearchParams({
       access_token: accessToken!,
-      title: `Study Material: ${query.slice(0, 50)}`,
-      author_name: 'Study Bot',
+      title: `Movies: ${query.slice(0, 50)}`,
+      author_name: 'Movie Bot',
       content: JSON.stringify(content),
       return_content: 'true',
     }),
@@ -146,13 +124,13 @@ async function createTelegraphPageForMatches(query: string, matches: MaterialIte
 }
 
 // -------------------- Bot Handler --------------------
-export function studySearch() {
+export function movieSearch() {
   return async (ctx: Context) => {
     try {
       if (!ctx.message || !('text' in ctx.message)) return;
       const query = ctx.message.text.trim();
       if (!query) {
-        await ctx.reply('❌ Please enter a search term.', { reply_to_message_id: ctx.message.message_id });
+        await ctx.reply('❌ Please enter a movie name.', { reply_to_message_id: ctx.message.message_id });
         return;
       }
 
@@ -162,7 +140,7 @@ export function studySearch() {
 
       const matches = rankedMatches(query);
       if (matches.length === 0) {
-        await ctx.reply(`❌ ${mention}, no materials found for "${query}".`, {
+        await ctx.reply(`❌ ${mention}, no movies found for "${query}".`, {
           reply_to_message_id: ctx.message.message_id,
         });
         return;
@@ -172,7 +150,7 @@ export function studySearch() {
       const shortQuery = query.split(/\s+/).slice(0, 3).join(' ');
 
       await ctx.reply(
-        `🔍 ${mention}, found *${matches.length}* matches for *${shortQuery}*:\n[View materials](${telegraphURL})`,
+        `🔍 ${mention}, found *${matches.length}* matches for *${shortQuery}*:\n[View movies](${telegraphURL})`,
         {
           parse_mode: 'Markdown',
           disable_web_page_preview: true,
