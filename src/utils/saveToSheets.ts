@@ -1,35 +1,62 @@
 // src/utils/saveToSheets.ts
-import fetch from 'node-fetch';
+import { google } from 'googleapis';
+import { sheetsAuth } from './sheetsAuth'; // You'll need to create this for authentication
 
-// Replace with your Google Apps Script Web App URL
-const SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/XXXXXXXXXXXX/exec';
+const SHEET_ID = 'YOUR_SHEET_ID';
+const SHEET_NAME = 'Users';
 
 export const saveToSheets = async (chat: any): Promise<boolean> => {
-  const chatId = String(chat.id);
+  const auth = await sheetsAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
 
-  // First check if this chat ID is already in Sheets
-  const checkResponse = await fetch(`${SHEETS_WEBHOOK_URL}?action=checkChatId&chatId=${chatId}`);
-  const checkData = await checkResponse.json();
-  if (checkData.exists) {
-    return true; // Already saved
-  }
-
-  // Save only chatId to Google Sheets
-  const saveResponse = await fetch(SHEETS_WEBHOOK_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'saveChatId',
-      chatId: chatId,
-      savedAt: new Date().toISOString()
-    })
+  // Fetch all chat IDs from sheet
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `${SHEET_NAME}!A2:F`, // Assuming A1:F1 is headers
   });
 
-  if (!saveResponse.ok) {
-    console.error(`Failed to save chat ID to Sheets: ${chatId}`);
-    return false;
+  const rows = res.data.values || [];
+  const chatIdStr = String(chat.id);
+  let foundRowIndex: number | null = null;
+
+  rows.forEach((row, index) => {
+    if (row[0] === chatIdStr) {
+      foundRowIndex = index + 2; // +2 for header offset
+    }
+  });
+
+  const now = new Date().toISOString();
+
+  if (foundRowIndex) {
+    // Update lastInteraction only
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${SHEET_NAME}!F${foundRowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [[now]],
+      },
+    });
+    return true; // Already existed
   }
 
-  console.log(`Saved chat ID to Sheets: ${chatId}`);
+  // Add new row
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `${SHEET_NAME}!A:F`,
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [[
+        chatIdStr,
+        chat.username || '',
+        chat.first_name || '',
+        chat.last_name || '',
+        now,  // dateJoined
+        now   // lastInteraction
+      ]],
+    },
+  });
+
+  console.log(`Saved new chat to Sheets: ${chatIdStr}`);
   return false;
 };
