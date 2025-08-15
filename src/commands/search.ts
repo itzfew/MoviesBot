@@ -1,7 +1,7 @@
 import { Context } from 'telegraf';
-import { readFileSync } from 'fs';
+import { fetch } from 'undici';
 
-// Interface for movie items remains the same
+// Interface for movie items
 interface MovieItem {
   category: string;
   title: string;
@@ -14,18 +14,23 @@ function createTelegramLink(key: string): string {
 }
 
 let movieData: MovieItem[] = [];
-function initializeMovieData(): void {
+async function initializeMovieData(): Promise<void> {
   const sources = [
-    { category: '1950-1989', path: '../../data/bollywood5089.csv' },
-    { category: '1990-2009', path: '../../data/bollywood9009.csv' },
-    { category: '2010-2019', path: '../../data/bollywood1019.csv' },
+    { category: '1950-1989', url: 'https://raw.githubusercontent.com/itzfew/MoviesBot/master/data/bollywood5089.csv' },
+    { category: '1990-2009', url: 'https://raw.githubusercontent.com/itzfew/MoviesBot/master/data/bollywood9009.csv'' },
+    { category: '2010-2019', url: 'https://raw.githubusercontent.com/itzfew/MoviesBot/master/data/bollywood1019.csv'' },
   ];
 
   const output: MovieItem[] = [];
 
   for (const source of sources) {
     try {
-      const text = readFileSync(source.path, 'utf-8');
+      const res = await fetch(source.url);
+      if (!res.ok) {
+        console.error(`Failed to fetch ${source.category} from ${source.url}: ${res.statusText}`);
+        continue;
+      }
+      const text = await res.text();
       const lines = text.split('\n').filter((line) => line.trim());
 
       for (let line of lines) {
@@ -61,13 +66,13 @@ function initializeMovieData(): void {
         });
       }
     } catch (e: unknown) {
-      console.error(`Failed to load ${source.category} from ${source.path}:`, (e as Error).message || e);
+      console.error(`Failed to load ${source.category} from ${source.url}:`, (e as Error).message || e);
     }
   }
 
   movieData = output;
 }
-initializeMovieData();
+initializeMovieData().catch(console.error);
 
 function rankedMatches(query: string): MovieItem[] {
   const queryWords = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
