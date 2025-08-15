@@ -1,19 +1,17 @@
 {
-  "name": "Eduhub",
-  "version": "1.1.1",
-  "description": "Telegram Bot EduHub",
+  "name": "eduhub",
+  "version": "1.1.2",
+  "description": "Telegram Bot EduHub - Google Sheets + Telegraf",
   "main": "src/index.ts",
   "author": "itzfew (https://t.me/itzfew)",
   "homepage": "https://github.com/itzfew/eduhub-bot",
   "dependencies": {
-    "@vercel/node": "^3.2.24",
-    "axios": "^1.6.7",
+    "axios": "^1.7.2",
     "cashfree-pg": "^4.2.6",
     "dotenv-cli": "^7.4.2",
-    "firebase": "^9.22.2",
-    "telegraf": "^4.16.3",
+    "google-spreadsheet": "^3.3.0",
     "node-fetch": "^3.3.2",
-    "google-spreadsheet": "^3.3.0"
+    "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "@types/axios": "^0.14.0",
@@ -31,7 +29,7 @@
     "dev": "DEBUG=bot* dotenv -e .env -- ts-node src/index.ts",
     "dev:watch": "DEBUG=bot* dotenv -e .env -- nodemon -e ts -x ts-node src/index.ts",
     "build": "ncc build src/index.ts -o public -m",
-    "prettier": "prettier --write 'src/**/*.ts'",
+    "prettier": "prettier --write \"src/**/*.ts\"",
     "lint": "tsc --noemit",
     "start": "node public/index.js"
   },
