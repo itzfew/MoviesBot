@@ -115,7 +115,7 @@ async function isJoinedAllGroups(ctx: Context, userId: number): Promise<{ joined
 async function sendMovieList(ctx: Context, query: string, matches: MovieItem[], page: number = 0) {
   const start = page * ITEMS_PER_PAGE;
   const end = start + ITEMS_PER_PAGE;
-  const pageMatches = matches.slice(start, Math.min(end, matches.length));
+  const pageMatches = matches.slice(start, end);
 
   if (pageMatches.length === 0) {
     await ctx.reply(`❌ No movies found for "${query}".`, {
@@ -129,8 +129,8 @@ async function sendMovieList(ctx: Context, query: string, matches: MovieItem[], 
       ? `@${ctx.from.username}`
       : ctx.from?.first_name || '';
 
-  const totalPages = Math.ceil(Math.min(matches.length, ITEMS_PER_PAGE) / ITEMS_PER_PAGE);
-  const text = `🔍 ${mention}, found *${Math.min(matches.length, ITEMS_PER_PAGE)}* matches for *${query}* (Page ${page + 1}/${totalPages}):\n\n` +
+  const totalPages = Math.ceil(matches.length / ITEMS_PER_PAGE);
+  const text = `🔍 ${mention}, found *${matches.length}* matches for *${query}* (Page ${page + 1}/${totalPages}):\n\n` +
     pageMatches
       .map((item, index) => `${start + index + 1}. [${item.title}](${item.telegramLink}) (${item.category})`)
       .join('\n');
@@ -139,7 +139,7 @@ async function sendMovieList(ctx: Context, query: string, matches: MovieItem[], 
     ...pageMatches.map((item, index) => ([{ text: `${start + index + 1}. ${item.title}`, url: item.telegramLink }])),
     [
       ...(page > 0 ? [{ text: '⬅️ Previous', callback_data: `prev|${query}|${page - 1}` }] : []),
-      ...(page < totalPages - 1 ? [{ text: 'Next ➡️', callback_data: `next|${query}|${page + 1}` }] : []),
+      ...(page < totalPages - 1 ? [{ text: 'Next 10 Movies ➡️', callback_data: `next|${query}|${page + 1}` }] : []),
     ],
     [
       { text: 'Join Group 1', url: GROUPS[0].url },
@@ -166,7 +166,7 @@ async function sendSearchJoinMessage(ctx: Context, query: string) {
 
   const membership = await isJoinedAllGroups(ctx, userId);
   if (membership.joined) {
-    const matches = rankedMatches(query).slice(0, ITEMS_PER_PAGE);
+    const matches = rankedMatches(query);
     if (matches.length === 0) {
       await ctx.reply(`❌ No movies found for "${query}".`, {
         reply_parameters: { message_id: (ctx.message as { message_id: number }).message_id },
@@ -204,7 +204,7 @@ function rankedMatches(query: string): MovieItem[] {
     }
   }
 
-  return results.sort((a, b) => b.rank - a.rank).map((r) => r.item).slice(0, ITEMS_PER_PAGE);
+  return results.sort((a, b) => b.rank - a.rank).map((r) => r.item);
 }
 
 // -------------------- Bot Handler --------------------
@@ -228,7 +228,7 @@ export function movieSearch() {
         return;
       }
 
-      // Handle /start with movie ID
+      // Handle /start with movie ID or verify
       if (query.startsWith('/start ') && query.split(' ').length > 1) {
         const param = query.split(' ')[1].trim();
         console.log(`Processing /start with param: ${param}`);
