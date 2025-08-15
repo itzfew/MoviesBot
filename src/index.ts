@@ -153,6 +153,9 @@ export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
   await production(req, res, bot);
 };
 
+// Default export for Vercel
+export default startVercel;
+
 if (ENVIRONMENT !== 'production') {
   development(bot);
 }
